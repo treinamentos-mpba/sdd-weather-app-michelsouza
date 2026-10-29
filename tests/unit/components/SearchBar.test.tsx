@@ -28,6 +28,31 @@ describe('SearchBar', () => {
     expect(screen.getByRole('status')).toHaveTextContent('pelo menos 2 caracteres');
   });
 
+  it('não dispara busca com um único caractere', async () => {
+    const onSearch = vi.fn();
+    const user = userEvent.setup();
+    render(<SearchBar onSearch={onSearch} />);
+
+    await user.type(screen.getByRole('textbox', { name: 'Buscar cidade' }), 'a');
+    await user.click(screen.getByRole('button', { name: 'Buscar' }));
+
+    expect(onSearch).not.toHaveBeenCalled();
+    expect(screen.getByRole('status')).toHaveTextContent('pelo menos 2 caracteres');
+  });
+
+  it('repassa acento, apóstrofo e símbolo como texto', async () => {
+    const onSearch = vi.fn();
+    const user = userEvent.setup();
+    render(<SearchBar onSearch={onSearch} />);
+    const input = screen.getByRole('textbox', { name: 'Buscar cidade' });
+
+    await user.type(input, "Val-d'Or");
+    await user.click(screen.getByRole('button', { name: 'Buscar' }));
+
+    expect(onSearch).toHaveBeenCalledWith("Val-d'Or");
+    expect(input).toHaveValue("Val-d'Or");
+  });
+
   it('envia o termo sem espaços nas pontas', async () => {
     const onSearch = vi.fn();
     const user = userEvent.setup();

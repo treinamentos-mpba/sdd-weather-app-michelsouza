@@ -25,6 +25,30 @@ describe('ForecastList', () => {
     expect(screen.getByRole('article', { name: 'qui, 29/10' })).toHaveTextContent('75 °F');
   });
 
+  it('mostra traço na temperatura ausente e zero na chuva', () => {
+    render(
+      <ForecastList
+        days={[
+          {
+            date: '2026-10-29',
+            maxTemperatureC: null,
+            minTemperatureC: null,
+            weatherCode: null,
+            description: 'Condição desconhecida',
+            precipitationProbability: 0,
+          },
+        ]}
+        unit="celsius"
+      />,
+    );
+
+    const card = screen.getByRole('article', { name: 'qui, 29/10' });
+    expect(card).toHaveTextContent('—');
+    expect(card).toHaveTextContent('Chuva 0%');
+    expect(card).not.toHaveTextContent('NaN');
+    expect(card).not.toHaveTextContent('undefined');
+  });
+
   it('avisa previsão incompleta sem inventar dias', () => {
     render(<ForecastList days={days.slice(0, 1)} unit="celsius" />);
 

@@ -20,7 +20,10 @@ export function temperatureUnitLabel(unit: Unit): '°C' | '°F' {
   return unit === 'fahrenheit' ? '°F' : '°C';
 }
 
-/** Ex.: 25 °C → "77 °F"; 20,6 °C → "69 °F". */
-export function formatTemperature(celsius: number, unit: Unit): string {
+/** Ex.: 25 °C → "77 °F"; 20,6 °C → "69 °F". Medição ausente: "—", nunca "NaN". */
+export function formatTemperature(celsius: number | null, unit: Unit): string {
+  if (celsius == null || !Number.isFinite(celsius)) {
+    return '—';
+  }
   return `${toDisplayTemperature(celsius, unit)} ${temperatureUnitLabel(unit)}`;
 }

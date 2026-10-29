@@ -69,13 +69,67 @@ describe('searchCities', () => {
     );
   });
 
-  it('retorna [] quando a resposta ok não traz results', async () => {
+  it('ignora resultado sem nome e usa traço quando o país vem null', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        results: [
+          { name: null, country: 'Brasil', latitude: 1, longitude: 2 },
+          {
+            name: 'Salvador',
+            country: null,
+            latitude: -12.97,
+            longitude: -38.51,
+            admin1: null,
+          },
+        ],
+      }),
+    });
+
+    await expect(searchCities('Salvador')).resolves.toEqual([
+      {
+        name: 'Salvador',
+        country: '—',
+        latitude: -12.97,
+        longitude: -38.51,
+      },
+    ]);
+  });
+
+  it('codifica acento, apóstrofo e emoji e não interpreta o termo', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ results: [] }),
+    });
+
+    const terms = ['São Luís', "Val-d'Or", '123🌧'];
+    for (const term of terms) {
+      await expect(searchCities(term)).resolves.toEqual([]);
+    }
+
+    expect(fetchMock).toHaveBeenCalledTimes(terms.length);
+    for (const [index, term] of terms.entries()) {
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        index + 1,
+        `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(term)}&count=10&language=pt`,
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+    }
+  });
+
+  it('retorna [] quando results vem vazio ou ausente', async () => {
     fetchMock.mockResolvedValue({
       ok: true,
       json: async () => ({}),
     });
 
     await expect(searchCities('Salvador')).resolves.toEqual([]);
+
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ results: [] }),
+    });
+    await expect(searchCities('Atlântida')).resolves.toEqual([]);
   });
 
   it('lança WeatherServiceError quando a resposta não é ok', async () => {
@@ -288,13 +342,63 @@ describe('getWeather', () => {
     });
     const skipped = await getWeather(city);
     if (skipped.daily.status === 'success') {
-      expect(skipped.daily.data.days.map((day) => day.date)).toEqual([
-        '2026-10-29',
-        '2026-10-30',
-        '2026-11-01',
-        '2026-11-02',
-      ]);
-      expect(skipped.daily.data.isPartial).toBe(true);
+      expect(skipped.daily.data.days).toHaveLength(5);
+      expect(skipped.daily.data.isPartial).toBe(false);
+      expect(skipped.daily.data.days[2]).toMatchObject({
+        date: '2026-10-31',
+        maxTemperatureC: null,
+        minTemperatureC: 24,
+      });
+    }
+  });
+
+  it('usa null ou zero quando a Open-Meteo omite medições', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () =>
+        forecastPayload({
+          current: {
+            temperature_2m: null,
+            weather_code: null,
+            relative_humidity_2m: null,
+            wind_speed_10m: null,
+            precipitation: null,
+            pressure_msl: null,
+          },
+          daily: {
+            time: ['2026-10-29', null, '2026-10-31'],
+            temperature_2m_max: [null, 30, 29],
+            temperature_2m_min: [24, null, 23],
+            weather_code: [null, 1, 3],
+            precipitation_probability_max: [null, 10, null],
+          },
+        }),
+    });
+
+    const weather = await getWeather(city);
+    expect(weather.current).toEqual({
+      status: 'success',
+      data: {
+        temperatureC: null,
+        weatherCode: null,
+        description: 'Condição desconhecida',
+        humidity: null,
+        windSpeedKmh: null,
+        precipitationMm: 0,
+        pressureHpa: null,
+      },
+    });
+    expect(weather.daily.status).toBe('success');
+    if (weather.daily.status === 'success') {
+      expect(weather.daily.data.days.map((day) => day.date)).toEqual(['2026-10-29', '2026-10-31']);
+      expect(weather.daily.data.days[0]).toMatchObject({
+        maxTemperatureC: null,
+        minTemperatureC: 24,
+        weatherCode: null,
+        description: 'Condição desconhecida',
+        precipitationProbability: 0,
+      });
+      expect(weather.daily.data.isPartial).toBe(true);
     }
   });
 

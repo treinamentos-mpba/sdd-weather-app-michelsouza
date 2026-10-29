@@ -33,7 +33,7 @@ interface GeocodingResult {
 }
 
 interface GeocodingResponse {
-  results?: GeocodingResult[];
+  results?: Array<GeocodingResult | null>;
 }
 
 function isAbortError(error: unknown): boolean {
@@ -62,36 +62,42 @@ export async function fetchWithTimeout(
   }
 }
 
-function isCityResult(result: GeocodingResult): result is GeocodingResult & {
-  name: string;
-  country: string;
-  latitude: number;
-  longitude: number;
-} {
-  return (
-    typeof result.name === 'string' &&
-    typeof result.country === 'string' &&
-    typeof result.latitude === 'number' &&
-    typeof result.longitude === 'number'
-  );
+function finiteNumber(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return null;
+  }
+  return value;
 }
 
-function toCity(result: GeocodingResult): City {
-  if (!isCityResult(result)) {
-    throw new WeatherServiceError('A resposta da busca de cidades veio incompleta.');
+function optionalText(value: unknown): string | null {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    return null;
+  }
+  return value;
+}
+
+/** Resultado sem nome ou coordenada não é selecionável. País ausente vira "—". */
+function toCity(result: GeocodingResult | null): City | null {
+  if (!result) {
+    return null;
+  }
+  const name = optionalText(result.name);
+  const latitude = finiteNumber(result.latitude);
+  const longitude = finiteNumber(result.longitude);
+  if (name == null || latitude == null || longitude == null) {
+    return null;
   }
 
   const city: City = {
-    name: result.name,
-    country: result.country,
-    latitude: result.latitude,
-    longitude: result.longitude,
+    name,
+    country: optionalText(result.country) ?? '—',
+    latitude,
+    longitude,
   };
-
-  if (typeof result.admin1 === 'string' && result.admin1.trim().length > 0) {
-    city.region = result.admin1;
+  const region = optionalText(result.admin1);
+  if (region) {
+    city.region = region;
   }
-
   return city;
 }
 
@@ -116,7 +122,10 @@ export async function searchCities(name: string): Promise<City[]> {
     throw new WeatherServiceError('A resposta da busca de cidades veio incompleta.');
   }
 
-  return payload.results.map(toCity);
+  return payload.results.flatMap((result) => {
+    const city = toCity(result);
+    return city ? [city] : [];
+  });
 }
 
 interface ForecastCurrent {
@@ -141,41 +150,29 @@ interface ForecastResponse {
   daily?: ForecastDaily;
 }
 
-function requireNumber(value: unknown): number {
-  if (typeof value !== 'number' || Number.isNaN(value)) {
-    throw new WeatherServiceError('A resposta do clima veio incompleta.');
-  }
-  return value;
-}
-
-/** Campo opcional da Open-Meteo. Ausente ou null vira zero, não erro. */
+/** Precipitação e chance de chuva. Ausente, null ou inválido vira zero, não NaN. */
 function numberOrZero(value: unknown): number {
-  if (value == null) {
-    return 0;
-  }
-  return requireNumber(value);
+  return finiteNumber(value) ?? 0;
 }
 
-function requireText(value: unknown): string {
-  if (typeof value !== 'string' || value.length === 0) {
-    throw new WeatherServiceError('A resposta do clima veio incompleta.');
-  }
-  return value;
+function asColumn(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
 }
 
 function toCurrentWeather(current: ForecastCurrent): CurrentWeather {
-  const weatherCode = requireNumber(current.weather_code);
+  const weatherCode = finiteNumber(current.weather_code);
   return {
-    temperatureC: requireNumber(current.temperature_2m),
+    temperatureC: finiteNumber(current.temperature_2m),
     weatherCode,
     description: getWeatherDescription(weatherCode),
-    humidity: requireNumber(current.relative_humidity_2m),
-    windSpeedKmh: requireNumber(current.wind_speed_10m),
+    humidity: finiteNumber(current.relative_humidity_2m),
+    windSpeedKmh: finiteNumber(current.wind_speed_10m),
     precipitationMm: numberOrZero(current.precipitation),
-    pressureHpa: requireNumber(current.pressure_msl),
+    pressureHpa: finiteNumber(current.pressure_msl),
   };
 }
 
+/** Sem data ISO o dia não existe. Métrica ausente permanece null para a UI mostrar "—". */
 function toForecastDay(
   dates: unknown[],
   maxTemperatures: unknown[],
@@ -183,51 +180,35 @@ function toForecastDay(
   codes: unknown[],
   rain: unknown[],
   index: number,
-): ForecastDay {
-  const weatherCode = requireNumber(codes[index]);
+): ForecastDay | null {
+  const date = optionalText(dates[index]);
+  if (date == null || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return null;
+  }
+  const weatherCode = finiteNumber(codes[index]);
   return {
-    date: requireText(dates[index]),
-    maxTemperatureC: requireNumber(maxTemperatures[index]),
-    minTemperatureC: requireNumber(minTemperatures[index]),
+    date,
+    maxTemperatureC: finiteNumber(maxTemperatures[index]),
+    minTemperatureC: finiteNumber(minTemperatures[index]),
     weatherCode,
     description: getWeatherDescription(weatherCode),
     precipitationProbability: numberOrZero(rain[index]),
   };
 }
 
-/** Dias alinhados e válidos, no máximo cinco. Dia inválido é omitido, nunca inventado. */
+/** Até cinco dias com data. Coluna ausente não derruba o dia; data ausente omite só aquele índice. */
 function toForecastDays(daily: ForecastDaily): ForecastDay[] {
-  const dates = daily.time;
-  const maxTemperatures = daily.temperature_2m_max;
-  const minTemperatures = daily.temperature_2m_min;
-  const codes = daily.weather_code;
-  const rain = daily.precipitation_probability_max;
-  if (
-    !Array.isArray(dates) ||
-    !Array.isArray(maxTemperatures) ||
-    !Array.isArray(minTemperatures) ||
-    !Array.isArray(codes) ||
-    !Array.isArray(rain)
-  ) {
-    throw new WeatherServiceError('A resposta do clima veio incompleta.');
-  }
-
-  const length = Math.min(
-    FORECAST_DAYS,
-    dates.length,
-    maxTemperatures.length,
-    minTemperatures.length,
-    codes.length,
-    rain.length,
-  );
+  const dates = asColumn(daily.time);
+  const maxTemperatures = asColumn(daily.temperature_2m_max);
+  const minTemperatures = asColumn(daily.temperature_2m_min);
+  const codes = asColumn(daily.weather_code);
+  const rain = asColumn(daily.precipitation_probability_max);
+  const length = Math.min(FORECAST_DAYS, dates.length);
   const days: ForecastDay[] = [];
   for (let index = 0; index < length; index += 1) {
-    try {
-      days.push(toForecastDay(dates, maxTemperatures, minTemperatures, codes, rain, index));
-    } catch (error) {
-      if (!(error instanceof WeatherServiceError)) {
-        throw error;
-      }
+    const day = toForecastDay(dates, maxTemperatures, minTemperatures, codes, rain, index);
+    if (day) {
+      days.push(day);
     }
   }
   return days;
@@ -239,35 +220,21 @@ function incompletePanel<T>(message = 'A resposta do clima veio incompleta.'): P
 }
 
 function mapCurrent(current: ForecastCurrent | undefined): PanelState<CurrentWeather> {
-  if (!current) {
+  if (!current || typeof current !== 'object') {
     return incompletePanel();
   }
-  try {
-    return { status: 'success', data: toCurrentWeather(current) };
-  } catch (error) {
-    if (error instanceof WeatherServiceError) {
-      return incompletePanel(error.message);
-    }
-    throw error;
-  }
+  return { status: 'success', data: toCurrentWeather(current) };
 }
 
 function mapDaily(daily: ForecastDaily | undefined): PanelState<DailyForecast> {
-  if (!daily) {
+  if (!daily || typeof daily !== 'object') {
     return incompletePanel();
   }
-  try {
-    const days = toForecastDays(daily);
-    return {
-      status: 'success',
-      data: { days, isPartial: days.length < FORECAST_DAYS },
-    };
-  } catch (error) {
-    if (error instanceof WeatherServiceError) {
-      return incompletePanel(error.message);
-    }
-    throw error;
-  }
+  const days = toForecastDays(daily);
+  return {
+    status: 'success',
+    data: { days, isPartial: days.length < FORECAST_DAYS },
+  };
 }
 
 /** Consulta o clima. Um bloco ausente não derruba o outro; os dois ausentes são erro. */

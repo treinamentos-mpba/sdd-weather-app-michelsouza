@@ -63,11 +63,17 @@ const WEATHER_DESCRIPTIONS: Record<number, string> = {
 const UNKNOWN_WEATHER_ICON = '🌡️';
 const UNKNOWN_WEATHER_DESCRIPTION = 'Condição desconhecida';
 
-/** Ícone decorativo do código WMO. A descrição em pt-BR vem do domínio. */
-export function getWeatherIcon(weatherCode: number): string {
+/** Ícone decorativo do código WMO. Código ausente usa o fallback, sem texto "undefined". */
+export function getWeatherIcon(weatherCode: number | null): string {
+  if (weatherCode == null || !Number.isFinite(weatherCode)) {
+    return UNKNOWN_WEATHER_ICON;
+  }
   return WEATHER_ICONS[weatherCode] ?? UNKNOWN_WEATHER_ICON;
 }
 
-export function getWeatherDescription(weatherCode: number): string {
+export function getWeatherDescription(weatherCode: number | null): string {
+  if (weatherCode == null || !Number.isFinite(weatherCode)) {
+    return UNKNOWN_WEATHER_DESCRIPTION;
+  }
   return WEATHER_DESCRIPTIONS[weatherCode] ?? UNKNOWN_WEATHER_DESCRIPTION;
 }

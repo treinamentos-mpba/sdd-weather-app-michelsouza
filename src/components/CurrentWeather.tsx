@@ -14,6 +14,13 @@ export interface CurrentWeatherProps {
 
 const metricFormat = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
 
+function formatMetric(value: number | null, suffix: string): string {
+  if (value == null || !Number.isFinite(value)) {
+    return '—';
+  }
+  return `${metricFormat.format(value)}${suffix}`;
+}
+
 function formatLocation(city: City): string {
   return [city.name, city.region, city.country]
     .filter((part) => part && part.trim().length > 0)
@@ -22,13 +29,15 @@ function formatLocation(city: City): string {
 
 export default function CurrentWeather({ city, current, unit }: CurrentWeatherProps) {
   const condition = current.description.trim() || 'Condição desconhecida';
-  const temperature = toDisplayTemperature(current.temperatureC, unit);
+  const celsius = current.temperatureC;
+  const temperature =
+    celsius != null && Number.isFinite(celsius) ? toDisplayTemperature(celsius, unit) : null;
   const unitLabel = temperatureUnitLabel(unit);
   const metrics = [
-    { label: 'Umidade', value: `${metricFormat.format(current.humidity)}%` },
-    { label: 'Vento', value: `${metricFormat.format(current.windSpeedKmh)} km/h` },
-    { label: 'Precipitação', value: `${metricFormat.format(current.precipitationMm)} mm` },
-    { label: 'Pressão', value: `${metricFormat.format(current.pressureHpa)} hPa` },
+    { label: 'Umidade', value: formatMetric(current.humidity, '%') },
+    { label: 'Vento', value: formatMetric(current.windSpeedKmh, ' km/h') },
+    { label: 'Precipitação', value: formatMetric(current.precipitationMm, ' mm') },
+    { label: 'Pressão', value: formatMetric(current.pressureHpa, ' hPa') },
   ];
 
   return (
@@ -46,13 +55,15 @@ export default function CurrentWeather({ city, current, unit }: CurrentWeatherPr
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <p className="min-w-0 text-5xl font-semibold leading-none tracking-tight text-white sm:text-7xl">
           <span className="sr-only">{formatTemperature(current.temperatureC, unit)}</span>
-          <span aria-hidden="true">{temperature}</span>
-          <span
-            aria-hidden="true"
-            className="ml-2 align-top text-3xl font-medium text-sun sm:text-4xl"
-          >
-            {unitLabel}
-          </span>
+          <span aria-hidden="true">{temperature ?? '—'}</span>
+          {temperature != null ? (
+            <span
+              aria-hidden="true"
+              className="ml-2 align-top text-3xl font-medium text-sun sm:text-4xl"
+            >
+              {unitLabel}
+            </span>
+          ) : null}
         </p>
         <span aria-hidden="true" className="shrink-0 text-4xl sm:text-6xl">
           {getWeatherIcon(current.weatherCode)}

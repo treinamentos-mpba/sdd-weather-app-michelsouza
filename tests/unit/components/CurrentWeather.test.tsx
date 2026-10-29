@@ -32,4 +32,28 @@ describe('CurrentWeather', () => {
     expect(screen.getByText('84 °F')).toBeInTheDocument();
     expect(current.temperatureC).toBe(29);
   });
+
+  it('mostra traço quando a medição veio ausente e zero na precipitação', () => {
+    render(
+      <CurrentWeather
+        city={{ name: 'Salvador', country: '—', latitude: -12.97, longitude: -38.51 }}
+        current={{
+          temperatureC: null,
+          weatherCode: null,
+          description: 'Condição desconhecida',
+          humidity: null,
+          windSpeedKmh: null,
+          precipitationMm: 0,
+          pressureHpa: null,
+        }}
+        unit="celsius"
+      />,
+    );
+
+    expect(screen.getByText('Salvador, —')).toBeInTheDocument();
+    expect(screen.getByText('Condição desconhecida')).toBeInTheDocument();
+    expect(screen.getByText('0 mm')).toBeInTheDocument();
+    expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText(/NaN|undefined/)).not.toBeInTheDocument();
+  });
 });

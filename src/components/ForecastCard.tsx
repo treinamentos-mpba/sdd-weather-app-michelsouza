@@ -13,7 +13,9 @@ export default function ForecastCard({ day, unit }: ForecastCardProps) {
   const headingId = useId();
   const label = formatDayLabel(day.date);
   const condition = day.description.trim() || 'Condição desconhecida';
-  const rain = Math.round(day.precipitationProbability);
+  const rain = Number.isFinite(day.precipitationProbability)
+    ? Math.round(day.precipitationProbability)
+    : null;
 
   return (
     <article
@@ -36,7 +38,9 @@ export default function ForecastCard({ day, unit }: ForecastCardProps) {
         <span>{formatTemperature(day.minTemperatureC, unit)}</span>
         <span className="sr-only"> de mínima</span>
       </p>
-      <p className="mt-2 text-xs text-white/80">Chuva {rain}%</p>
+      <p className="mt-2 text-xs text-white/80">
+        Chuva {rain == null ? '—' : `${rain}%`}
+      </p>
     </article>
   );
 }

@@ -15,37 +15,40 @@ export interface City {
   longitude: number;
 }
 
-/** Clima atual validado. A temperatura está em Celsius; as demais métricas não são convertidas. */
+/**
+ * Clima atual validado. A temperatura está em Celsius; as demais métricas não são convertidas.
+ * `null` é medição omitida pela Open-Meteo: a UI mostra "—", nunca 0 nem NaN.
+ */
 export interface CurrentWeather {
-  /** Temperatura atual em Celsius. */
-  temperatureC: number;
-  /** Código WMO retornado pela Open-Meteo. */
-  weatherCode: number;
+  /** Temperatura atual em Celsius. Ausente: "—". */
+  temperatureC: number | null;
+  /** Código WMO. Ausente: ícone e texto de condição desconhecida. */
+  weatherCode: number | null;
   /** Descrição em pt-BR. Fallback de exibição: "Condição desconhecida". */
   description: string;
-  /** Umidade relativa, em porcentagem. */
-  humidity: number;
-  /** Velocidade do vento, em km/h. */
-  windSpeedKmh: number;
-  /** Precipitação, em milímetros. */
+  /** Umidade relativa, em porcentagem. Ausente: "—". */
+  humidity: number | null;
+  /** Velocidade do vento, em km/h. Ausente: "—". */
+  windSpeedKmh: number | null;
+  /** Precipitação, em milímetros. Ausente ou null vira 0. */
   precipitationMm: number;
-  /** Pressão ao nível do mar, em hPa. */
-  pressureHpa: number;
+  /** Pressão ao nível do mar, em hPa. Ausente: "—". */
+  pressureHpa: number | null;
 }
 
-/** Dia da previsão validado. Temperaturas em Celsius. */
+/** Dia da previsão com data identificável. Temperaturas em Celsius; null vira "—" na UI. */
 export interface ForecastDay {
-  /** Data ISO no fuso local da cidade. */
+  /** Data ISO no fuso local da cidade. Sem data, o dia é omitido. */
   date: string;
-  /** Máxima diária em Celsius. */
-  maxTemperatureC: number;
-  /** Mínima diária em Celsius. */
-  minTemperatureC: number;
-  /** Código WMO do dia. */
-  weatherCode: number;
+  /** Máxima diária em Celsius. Ausente: "—". */
+  maxTemperatureC: number | null;
+  /** Mínima diária em Celsius. Ausente: "—". */
+  minTemperatureC: number | null;
+  /** Código WMO do dia. Ausente: condição desconhecida. */
+  weatherCode: number | null;
   /** Descrição em pt-BR. */
   description: string;
-  /** Probabilidade de chuva, em porcentagem. */
+  /** Probabilidade de chuva, em porcentagem. Ausente ou null vira 0. */
   precipitationProbability: number;
 }
 
