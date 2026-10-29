@@ -7,7 +7,9 @@ describe('SearchBar', () => {
     render(<SearchBar onSearch={() => undefined} />);
 
     expect(screen.getByRole('search', { name: 'Buscar cidade' })).toBeInTheDocument();
-    expect(screen.getByRole('textbox', { name: 'Buscar cidade' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Buscar cidade', { selector: 'input' })).toBe(
+      screen.getByRole('textbox', { name: 'Buscar cidade' }),
+    );
     expect(screen.getByRole('button', { name: 'Buscar' })).toBeInTheDocument();
   });
 

@@ -90,4 +90,56 @@ describe('App', () => {
     expect(await screen.findByRole('region', { name: 'Clima atual' })).toHaveTextContent('29 °C');
     expect(searchCities).toHaveBeenLastCalledWith('erro');
   });
+
+  it('aplica a unidade escolhida durante o loading sem nova consulta', async () => {
+    const user = userEvent.setup();
+    const pendingCities = deferred<City[]>();
+    vi.mocked(searchCities).mockImplementation(() => pendingCities.promise);
+    vi.mocked(getWeather).mockResolvedValue(mockWeatherData);
+    render(<App />);
+
+    await user.type(screen.getByRole('textbox', { name: 'Buscar cidade' }), 'Salvador');
+    await user.click(screen.getByRole('button', { name: 'Buscar' }));
+    expect(screen.getByRole('status')).toHaveTextContent('Consultando o clima...');
+
+    await user.click(screen.getByRole('button', { name: 'Fahrenheit' }));
+    expect(screen.getByRole('status')).toHaveTextContent('Consultando o clima...');
+    expect(getWeather).not.toHaveBeenCalled();
+
+    await act(async () => {
+      pendingCities.resolve([mockWeatherData.city]);
+    });
+
+    expect(await screen.findByRole('region', { name: 'Clima atual' })).toHaveTextContent('84 °F');
+    expect(getWeather).toHaveBeenCalledTimes(1);
+  });
+
+  it('mostra a previsão parcial e volta a Celsius sem reconverter o valor', async () => {
+    const user = userEvent.setup();
+    const days =
+      mockWeatherData.daily.status === 'success' ? mockWeatherData.daily.data.days.slice(0, 2) : [];
+    vi.mocked(searchCities).mockResolvedValue([mockWeatherData.city]);
+    vi.mocked(getWeather).mockResolvedValue({
+      ...mockWeatherData,
+      daily: { status: 'success', data: { days, isPartial: true } },
+    });
+    render(<App />);
+
+    await user.type(screen.getByRole('textbox', { name: 'Buscar cidade' }), 'Salvador');
+    await user.click(screen.getByRole('button', { name: 'Buscar' }));
+
+    expect(await screen.findByRole('region', { name: 'Clima atual' })).toHaveTextContent('29 °C');
+    expect(screen.getByRole('status')).toHaveTextContent('apenas 2 dias');
+    expect(screen.getAllByRole('listitem')).toHaveLength(2);
+    expect(screen.queryByRole('region', { name: 'Previsão de 5 dias' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Fahrenheit' }));
+    expect(screen.getByRole('region', { name: 'Clima atual' })).toHaveTextContent('84 °F');
+    expect(screen.getAllByRole('listitem')[0]).toHaveTextContent('88 °F');
+
+    await user.click(screen.getByRole('button', { name: 'Celsius' }));
+    expect(screen.getByRole('region', { name: 'Clima atual' })).toHaveTextContent('29 °C');
+    expect(screen.getByRole('region', { name: 'Clima atual' })).not.toHaveTextContent('84');
+    expect(getWeather).toHaveBeenCalledTimes(1);
+  });
 });

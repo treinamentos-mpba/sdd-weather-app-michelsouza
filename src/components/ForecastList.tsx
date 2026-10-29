@@ -19,8 +19,10 @@ function partialMessage(count: number): string {
 export default function ForecastList({ days, unit }: ForecastListProps) {
   const isPartial = days.length < 5;
 
+  const label = days.length === 5 ? 'Previsão de 5 dias' : 'Previsão';
+
   return (
-    <section aria-label="Previsão" className="w-full">
+    <section aria-label={label} className="w-full">
       {isPartial ? (
         <p role="status" className="mb-3 text-sm text-sun">
           {partialMessage(days.length)}

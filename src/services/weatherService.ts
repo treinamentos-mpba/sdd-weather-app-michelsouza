@@ -1,5 +1,13 @@
 import { getWeatherDescription } from '../lib/weatherCodes.ts';
-import type { City, CurrentWeather, ForecastDay, WeatherData } from '../types/weather.ts';
+import type {
+  AppError,
+  City,
+  CurrentWeather,
+  DailyForecast,
+  ForecastDay,
+  PanelState,
+  WeatherData,
+} from '../types/weather.ts';
 
 const GEOCODING_URL = 'https://geocoding-api.open-meteo.com/v1/search';
 const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
@@ -140,6 +148,14 @@ function requireNumber(value: unknown): number {
   return value;
 }
 
+/** Campo opcional da Open-Meteo. Ausente ou null vira zero, não erro. */
+function numberOrZero(value: unknown): number {
+  if (value == null) {
+    return 0;
+  }
+  return requireNumber(value);
+}
+
 function requireText(value: unknown): string {
   if (typeof value !== 'string' || value.length === 0) {
     throw new WeatherServiceError('A resposta do clima veio incompleta.');
@@ -155,11 +171,31 @@ function toCurrentWeather(current: ForecastCurrent): CurrentWeather {
     description: getWeatherDescription(weatherCode),
     humidity: requireNumber(current.relative_humidity_2m),
     windSpeedKmh: requireNumber(current.wind_speed_10m),
-    precipitationMm: requireNumber(current.precipitation),
+    precipitationMm: numberOrZero(current.precipitation),
     pressureHpa: requireNumber(current.pressure_msl),
   };
 }
 
+function toForecastDay(
+  dates: unknown[],
+  maxTemperatures: unknown[],
+  minTemperatures: unknown[],
+  codes: unknown[],
+  rain: unknown[],
+  index: number,
+): ForecastDay {
+  const weatherCode = requireNumber(codes[index]);
+  return {
+    date: requireText(dates[index]),
+    maxTemperatureC: requireNumber(maxTemperatures[index]),
+    minTemperatureC: requireNumber(minTemperatures[index]),
+    weatherCode,
+    description: getWeatherDescription(weatherCode),
+    precipitationProbability: numberOrZero(rain[index]),
+  };
+}
+
+/** Dias alinhados e válidos, no máximo cinco. Dia inválido é omitido, nunca inventado. */
 function toForecastDays(daily: ForecastDaily): ForecastDay[] {
   const dates = daily.time;
   const maxTemperatures = daily.temperature_2m_max;
@@ -171,30 +207,70 @@ function toForecastDays(daily: ForecastDaily): ForecastDay[] {
     !Array.isArray(maxTemperatures) ||
     !Array.isArray(minTemperatures) ||
     !Array.isArray(codes) ||
-    !Array.isArray(rain) ||
-    dates.length < FORECAST_DAYS ||
-    maxTemperatures.length < FORECAST_DAYS ||
-    minTemperatures.length < FORECAST_DAYS ||
-    codes.length < FORECAST_DAYS ||
-    rain.length < FORECAST_DAYS
+    !Array.isArray(rain)
   ) {
     throw new WeatherServiceError('A resposta do clima veio incompleta.');
   }
 
-  return Array.from({ length: FORECAST_DAYS }, (_, index) => {
-    const weatherCode = requireNumber(codes[index]);
-    return {
-      date: requireText(dates[index]),
-      maxTemperatureC: requireNumber(maxTemperatures[index]),
-      minTemperatureC: requireNumber(minTemperatures[index]),
-      weatherCode,
-      description: getWeatherDescription(weatherCode),
-      precipitationProbability: requireNumber(rain[index]),
-    };
-  });
+  const length = Math.min(
+    FORECAST_DAYS,
+    dates.length,
+    maxTemperatures.length,
+    minTemperatures.length,
+    codes.length,
+    rain.length,
+  );
+  const days: ForecastDay[] = [];
+  for (let index = 0; index < length; index += 1) {
+    try {
+      days.push(toForecastDay(dates, maxTemperatures, minTemperatures, codes, rain, index));
+    } catch (error) {
+      if (!(error instanceof WeatherServiceError)) {
+        throw error;
+      }
+    }
+  }
+  return days;
 }
 
-/** Consulta o clima atual e cinco dias. current ou daily ausentes são resposta incompleta. */
+function incompletePanel<T>(message = 'A resposta do clima veio incompleta.'): PanelState<T> {
+  const error: AppError = { kind: 'invalid-payload', message };
+  return { status: 'error', error };
+}
+
+function mapCurrent(current: ForecastCurrent | undefined): PanelState<CurrentWeather> {
+  if (!current) {
+    return incompletePanel();
+  }
+  try {
+    return { status: 'success', data: toCurrentWeather(current) };
+  } catch (error) {
+    if (error instanceof WeatherServiceError) {
+      return incompletePanel(error.message);
+    }
+    throw error;
+  }
+}
+
+function mapDaily(daily: ForecastDaily | undefined): PanelState<DailyForecast> {
+  if (!daily) {
+    return incompletePanel();
+  }
+  try {
+    const days = toForecastDays(daily);
+    return {
+      status: 'success',
+      data: { days, isPartial: days.length < FORECAST_DAYS },
+    };
+  } catch (error) {
+    if (error instanceof WeatherServiceError) {
+      return incompletePanel(error.message);
+    }
+    throw error;
+  }
+}
+
+/** Consulta o clima. Um bloco ausente não derruba o outro; os dois ausentes são erro. */
 export async function getWeather(city: City): Promise<WeatherData> {
   const params = new URLSearchParams({
     latitude: String(city.latitude),
@@ -211,15 +287,21 @@ export async function getWeather(city: City): Promise<WeatherData> {
     throw new WeatherServiceError('Não foi possível consultar o clima.', response.status);
   }
 
-  const payload = (await response.json()) as ForecastResponse;
-  if (!payload.current || !payload.daily) {
+  let payload: ForecastResponse;
+  try {
+    payload = (await response.json()) as ForecastResponse;
+  } catch {
+    throw new WeatherServiceError('A resposta do clima veio incompleta.');
+  }
+  if (!payload || typeof payload !== 'object') {
     throw new WeatherServiceError('A resposta do clima veio incompleta.');
   }
 
-  const days = toForecastDays(payload.daily);
-  return {
-    current: { status: 'success', data: toCurrentWeather(payload.current) },
-    daily: { status: 'success', data: { days, isPartial: false } },
-    fetchedAt: new Date(),
-  };
+  const current = mapCurrent(payload.current);
+  const daily = mapDaily(payload.daily);
+  if (current.status === 'error' && daily.status === 'error') {
+    throw new WeatherServiceError(current.error.message);
+  }
+
+  return { current, daily, fetchedAt: new Date() };
 }

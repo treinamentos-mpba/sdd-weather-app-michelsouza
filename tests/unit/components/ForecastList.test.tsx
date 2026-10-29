@@ -8,6 +8,7 @@ describe('ForecastList', () => {
   it('mostra cinco cards com rótulo, temperaturas e chance de chuva', () => {
     render(<ForecastList days={days} unit="celsius" />);
 
+    expect(screen.getByRole('region', { name: 'Previsão de 5 dias' })).toBeInTheDocument();
     const list = screen.getByRole('list');
     expect(list).toHaveClass('grid-cols-2', 'sm:grid-cols-3', 'lg:grid-cols-5');
     expect(screen.getAllByRole('listitem')).toHaveLength(5);
