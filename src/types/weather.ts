@@ -1,0 +1,90 @@
+/** Unidade de exibição. Os dados internos permanecem sempre em Celsius. */
+export type Unit = 'celsius' | 'fahrenheit';
+
+/** Cidade selecionável, normalizada a partir do geocoding. */
+export interface City {
+  /** Nome da cidade. */
+  name: string;
+  /** País, como exibido na interface. */
+  country: string;
+  /** Região ou estado (`admin1`). Ausente: mostrar só cidade e país. */
+  region?: string;
+  /** Latitude em graus decimais. */
+  latitude: number;
+  /** Longitude em graus decimais. */
+  longitude: number;
+}
+
+/** Clima atual validado. A temperatura está em Celsius; as demais métricas não são convertidas. */
+export interface CurrentWeather {
+  /** Temperatura atual em Celsius. */
+  temperatureC: number;
+  /** Código WMO retornado pela Open-Meteo. */
+  weatherCode: number;
+  /** Descrição em pt-BR. Fallback de exibição: "Condição desconhecida". */
+  description: string;
+  /** Umidade relativa, em porcentagem. */
+  humidity: number;
+  /** Velocidade do vento, em km/h. */
+  windSpeedKmh: number;
+  /** Precipitação, em milímetros. */
+  precipitationMm: number;
+  /** Pressão ao nível do mar, em hPa. */
+  pressureHpa: number;
+}
+
+/** Dia da previsão validado. Temperaturas em Celsius. */
+export interface ForecastDay {
+  /** Data ISO no fuso local da cidade. */
+  date: string;
+  /** Máxima diária em Celsius. */
+  maxTemperatureC: number;
+  /** Mínima diária em Celsius. */
+  minTemperatureC: number;
+  /** Código WMO do dia. */
+  weatherCode: number;
+  /** Descrição em pt-BR. */
+  description: string;
+  /** Probabilidade de chuva, em porcentagem. */
+  precipitationProbability: number;
+}
+
+/** Previsão diária. Zero dias válidos também é previsão parcial, não erro. */
+export interface DailyForecast {
+  /** Dias válidos, em ordem cronológica. */
+  days: ForecastDay[];
+  /** Verdadeiro quando há menos de cinco dias. */
+  isPartial: boolean;
+}
+
+/** Classe de erro usada nas mensagens em pt-BR. */
+export type AppErrorKind = 'network' | 'timeout' | 'service' | 'invalid-payload';
+
+/** Erro já classificado para a interface. */
+export interface AppError {
+  kind: AppErrorKind;
+  /** Mensagem em pt-BR, sem jargão técnico. */
+  message: string;
+}
+
+/** Resultado de um painel. Permite sucesso de um bloco e erro do outro. */
+export type PanelState<T> = { status: 'success'; data: T } | { status: 'error'; error: AppError };
+
+/**
+ * Consulta meteorológica validada.
+ * `current` e `daily` são independentes.
+ */
+export interface WeatherData {
+  current: PanelState<CurrentWeather>;
+  daily: PanelState<DailyForecast>;
+  /** Horário local do dispositivo no momento da recepção. */
+  fetchedAt: Date;
+}
+
+/** Estados assíncronos explícitos de uma consulta. */
+export type AsyncState<T> =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'success'; data: T }
+  | { status: 'empty' }
+  | { status: 'error'; error: AppError };
